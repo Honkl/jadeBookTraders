@@ -1,0 +1,8 @@
+APDescription.txt
+MTPs-Main-Container.txt
+build.xml
+build/
+dist/
+jade/
+manifest.mf
+nbproject/
