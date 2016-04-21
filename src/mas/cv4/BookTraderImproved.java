@@ -25,9 +25,10 @@ import java.util.*;
 /**
  * Created by Martin Pilat on 16.4.14.
  *
- * A simple (testing) version of the trading agent. The agent does not trade in any reasonable way, it only ensures it
- * does not sell bosks it does not own (but it can still happed from time to time if two agents asks for the same book
- * at the same time).
+ * A simple (testing) version of the trading agent. The agent does not trade in
+ * any reasonable way, it only ensures it does not sell bosks it does not own
+ * (but it can still happed from time to time if two agents asks for the same
+ * book at the same time).
  *
  */
 public class BookTraderImproved extends Agent {
@@ -83,7 +84,6 @@ public class BookTraderImproved extends Agent {
     // waits for the StartTrading message and adds the trading behavior
     class StartTradingBehaviour extends AchieveREResponder {
 
-
         public StartTradingBehaviour(Agent a, MessageTemplate mt) {
             super(a, mt);
         }
@@ -97,8 +97,7 @@ public class BookTraderImproved extends Agent {
                 if (!(ce instanceof Action)) {
                     throw new NotUnderstoodException("");
                 }
-                Action a = (Action)ce;
-
+                Action a = (Action) ce;
 
                 //we got the request to start trading
                 if (a.getAction() instanceof StartTrading) {
@@ -120,9 +119,9 @@ public class BookTraderImproved extends Agent {
 
                     ACLMessage myInfo = FIPAService.doFipaRequestClient(myAgent, getMyInfo);
 
-                    Result res = (Result)getContentManager().extractContent(myInfo);
+                    Result res = (Result) getContentManager().extractContent(myInfo);
 
-                    AgentInfo ai = (AgentInfo)res.getValue();
+                    AgentInfo ai = (AgentInfo) res.getValue();
 
                     myBooks = ai.getBooks();
                     myGoal = ai.getGoals();
@@ -153,10 +152,8 @@ public class BookTraderImproved extends Agent {
             return super.handleRequest(request);
         }
 
-
         //this behavior trades with books
         class TradingBehaviour extends TickerBehaviour {
-
 
             public TradingBehaviour(Agent a, long period) {
                 super(a, period);
@@ -178,20 +175,25 @@ public class BookTraderImproved extends Agent {
                     ACLMessage buyBook = new ACLMessage(ACLMessage.CFP);
                     buyBook.setLanguage(codec.getName());
                     buyBook.setOntology(onto.getName());
-                    buyBook.setReplyByDate(new Date(System.currentTimeMillis()+5000));
+                    buyBook.setReplyByDate(new Date(System.currentTimeMillis() + 5000));
 
                     for (DFAgentDescription dfad : traders) {
-                        if (dfad.getName().equals(myAgent.getAID()))
+                        if (dfad.getName().equals(myAgent.getAID())) {
                             continue;
+                        }
                         buyBook.addReceiver(dfad.getName());
                     }
 
                     ArrayList<BookInfo> bis = new ArrayList<BookInfo>();
 
-                    //choose a book from goals to buy
-                    BookInfo bi = new BookInfo();
-                    bi.setBookName(myGoal.get(rnd.nextInt(myGoal.size())).getBook().getBookName());
-                    bis.add(bi);
+                    //
+                    // TODO
+                    //
+                    for (Goal goal : myGoal) {
+                        BookInfo bi = new BookInfo();
+                        bi.setBookName(goal.getBook().getBookName());
+                        bis.add(bi);
+                    }
 
                     SellMeBooks smb = new SellMeBooks();
                     smb.setBooks(bis);
@@ -209,7 +211,6 @@ public class BookTraderImproved extends Agent {
             }
         }
 
-
         //this behavior takes care of the buying of the book itself
         class ObtainBook extends ContractNetInitiator {
 
@@ -220,12 +221,10 @@ public class BookTraderImproved extends Agent {
             Chosen c;  //we need to remember what offer we have chosen
             ArrayList<BookInfo> shouldReceive; //we also remember what the seller offered to us
 
-
             //the seller informs us it processed the order, we need to send the payment
             @Override
             protected void handleInform(ACLMessage inform) {
                 try {
-
 
                     //create the transaction info and send it to the environment
                     MakeTransaction mt = new MakeTransaction();
@@ -234,14 +233,16 @@ public class BookTraderImproved extends Agent {
                     mt.setReceiverName(inform.getSender().getName());
                     mt.setTradeConversationID(inform.getConversationId());
 
-                    if (c.getOffer().getBooks() == null)
+                    if (c.getOffer().getBooks() == null) {
                         c.getOffer().setBooks(new ArrayList<BookInfo>());
+                    }
 
                     mt.setSendingBooks(c.getOffer().getBooks());
                     mt.setSendingMoney(c.getOffer().getMoney());
 
-                    if (shouldReceive == null)
+                    if (shouldReceive == null) {
                         shouldReceive = new ArrayList<BookInfo>();
+                    }
 
                     mt.setReceivingBooks(shouldReceive);
                     mt.setReceivingMoney(0.0);
@@ -283,7 +284,7 @@ public class BookTraderImproved extends Agent {
                 //we need to accept only one offer, otherwise we create two transactions with the same ID
                 boolean accepted = false;
                 while (it.hasNext()) {
-                    ACLMessage response = (ACLMessage)it.next();
+                    ACLMessage response = (ACLMessage) it.next();
 
                     ContentElement ce = null;
                     try {
@@ -293,18 +294,19 @@ public class BookTraderImproved extends Agent {
 
                         ce = getContentManager().extractContent(response);
 
-                        ChooseFrom cf = (ChooseFrom)ce;
+                        ChooseFrom cf = (ChooseFrom) ce;
 
                         ArrayList<Offer> offers = cf.getOffers();
 
                         //find out which offers we can fulfill (we have all requested books and enough money)
                         ArrayList<Offer> canFulfill = new ArrayList<Offer>();
-                        for (Offer o: offers) {
-                            if (o.getMoney() > myMoney)
+                        for (Offer o : offers) {
+                            if (o.getMoney() > myMoney) {
                                 continue;
+                            }
 
                             boolean foundAll = true;
-                            if (o.getBooks() != null)
+                            if (o.getBooks() != null) {
                                 for (BookInfo bi : o.getBooks()) {
                                     String bn = bi.getBookName();
                                     boolean found = false;
@@ -320,6 +322,7 @@ public class BookTraderImproved extends Agent {
                                         break;
                                     }
                                 }
+                            }
 
                             if (foundAll) {
                                 canFulfill.add(o);
@@ -342,7 +345,7 @@ public class BookTraderImproved extends Agent {
                         Chosen ch = new Chosen();
                         ch.setOffer(canFulfill.get(rnd.nextInt(canFulfill.size())));
 
-                        c=ch;
+                        c = ch;
                         shouldReceive = cf.getWillSell();
 
                         getContentManager().fillContent(acc, ch);
@@ -358,7 +361,6 @@ public class BookTraderImproved extends Agent {
 
             }
         }
-
 
         //this behavior processes the selling of books
         class SellBook extends SSResponderDispatcher {
@@ -383,12 +385,11 @@ public class BookTraderImproved extends Agent {
             protected ACLMessage handleCfp(ACLMessage cfp) throws RefuseException, FailureException, NotUnderstoodException {
 
                 try {
-                    Action ac = (Action)getContentManager().extractContent(cfp);
+                    Action ac = (Action) getContentManager().extractContent(cfp);
 
-                    SellMeBooks smb = (SellMeBooks)ac.getAction();
+                    SellMeBooks smb = (SellMeBooks) ac.getAction();
                     ArrayList<BookInfo> books = smb.getBooks();
-
-                    ArrayList<BookInfo> sellBooks = new ArrayList<BookInfo>();
+                    ArrayList<BookInfo> sellBooks = new ArrayList<>();
 
                     //find out, if we have books the agent wants
                     for (int i = 0; i < books.size(); i++) {
@@ -400,24 +401,33 @@ public class BookTraderImproved extends Agent {
                                 break;
                             }
                         }
-                        if (!found)
+                        if (!found) {
                             throw new RefuseException("");
+                        }
                     }
 
-                    //create two offers
-                    Offer o1 = new Offer();
-                    o1.setMoney(100);
-
-                    ArrayList<BookInfo> bis = new ArrayList<BookInfo>();
-                    bis.add(myGoal.get(rnd.nextInt(myGoal.size())).getBook());
-
-                    Offer o2 = new Offer();
-                    o2.setBooks(bis);
-                    o2.setMoney(20);
-
-                    ArrayList<Offer> offers = new ArrayList<Offer>();
-                    offers.add(o1);
-                    offers.add(o2);
+                    //
+                    // TODO
+                    //
+                    ArrayList<Offer> offers = new ArrayList<>();
+                    for (BookInfo toSell : sellBooks) {
+                        Offer offer = new Offer();
+                        boolean found = false;
+                        for (Goal goal : myGoal) {
+                            if (goal.getBook().equals(toSell)) {
+                                offer.setMoney(goal.getValue() + rnd.nextInt(10));
+                                offers.add(offer);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (found) {
+                            continue;
+                        }
+                        double minAcceptableValue = Constants.bookPrices.get(toSell.getBookName()) - 20;
+                        offer.setMoney(minAcceptableValue + rnd.nextInt(5));
+                        offers.add(offer);
+                    }
 
                     ChooseFrom cf = new ChooseFrom();
 
@@ -441,12 +451,13 @@ public class BookTraderImproved extends Agent {
 
                 throw new FailureException("");
             }
+
             //the buyer decided to accept an offer
             @Override
             protected ACLMessage handleAcceptProposal(ACLMessage cfp, ACLMessage propose, ACLMessage accept) throws FailureException {
 
                 try {
-                    ChooseFrom cf = (ChooseFrom)getContentManager().extractContent(propose);
+                    ChooseFrom cf = (ChooseFrom) getContentManager().extractContent(propose);
 
                     //prepare the transaction info and send it to the environment
                     MakeTransaction mt = new MakeTransaction();
@@ -462,7 +473,7 @@ public class BookTraderImproved extends Agent {
                     mt.setSendingBooks(cf.getWillSell());
                     mt.setSendingMoney(0.0);
 
-                    Chosen c = (Chosen)getContentManager().extractContent(accept);
+                    Chosen c = (Chosen) getContentManager().extractContent(accept);
 
                     if (c.getOffer().getBooks() == null) {
                         c.getOffer().setBooks(new ArrayList<BookInfo>());
@@ -533,9 +544,9 @@ public class BookTraderImproved extends Agent {
 
                     ACLMessage myInfo = FIPAService.doFipaRequestClient(myAgent, getMyInfo);
 
-                    Result res = (Result)getContentManager().extractContent(myInfo);
+                    Result res = (Result) getContentManager().extractContent(myInfo);
 
-                    AgentInfo ai = (AgentInfo)res.getValue();
+                    AgentInfo ai = (AgentInfo) res.getValue();
 
                     myBooks = ai.getBooks();
                     myGoal = ai.getGoals();
