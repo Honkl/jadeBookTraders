@@ -205,7 +205,7 @@ public class Environment extends Agent {
             for (int i = utils.size() - 1; i >=0; i--) {
                 AgentUtil au = utils.get(i);
                 System.out.printf("%50s  %13f %5s \n", au.agent, au.util, au.goalMet ? "YES" : "NO");
-                //System.out.println(agentBooks.get(au.agent));
+                System.out.println(agentBooks.get(au.agent));
             }
             System.out.println();
 
@@ -475,7 +475,7 @@ public class Environment extends Agent {
                 books.add(addBooks.get(i));
             }
 
-            //System.out.println("Transaction: " + sendOrder1);
+            System.out.println("Transaction: " + sendOrder1);
 
 
             //transfer money between agents
@@ -495,8 +495,8 @@ public class Environment extends Agent {
             send(reply1);
             send(reply2);
 
-            //System.out.println(agentName1 + " " + agentInfo1.toString());
-            //System.out.println(agentName2 + " " + agentInfo2.toString());
+            System.out.println(agentName1 + " " + agentInfo1.toString());
+            System.out.println(agentName2 + " " + agentInfo2.toString());
 
         }
 

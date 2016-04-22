@@ -21,6 +21,7 @@ import jade.proto.*;
 import mas.cv4.onto.*;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
  * Created by Martin Pilat on 16.4.14.
@@ -128,7 +129,7 @@ public class BookTraderImproved extends Agent {
                     myMoney = ai.getMoney();
 
                     //add a behavior which tries to buy a book every two seconds
-                    addBehaviour(new TradingBehaviour(myAgent, 2000));
+                    addBehaviour(new TradingBehaviour(myAgent, 1000)); // @TODO
 
                     //add a behavior which sells book to other agents
                     addBehaviour(new SellBook(myAgent, MessageTemplate.MatchPerformative(ACLMessage.CFP)));
@@ -164,47 +165,43 @@ public class BookTraderImproved extends Agent {
 
                 try {
 
-                    //find other seller and prepare a CFP
-                    ServiceDescription sd = new ServiceDescription();
-                    sd.setType("book-trader");
-                    DFAgentDescription dfd = new DFAgentDescription();
-                    dfd.addServices(sd);
-
-                    DFAgentDescription[] traders = DFService.search(myAgent, dfd);
-
-                    ACLMessage buyBook = new ACLMessage(ACLMessage.CFP);
-                    buyBook.setLanguage(codec.getName());
-                    buyBook.setOntology(onto.getName());
-                    buyBook.setReplyByDate(new Date(System.currentTimeMillis() + 5000));
-
-                    for (DFAgentDescription dfad : traders) {
-                        if (dfad.getName().equals(myAgent.getAID())) {
-                            continue;
-                        }
-                        buyBook.addReceiver(dfad.getName());
-                    }
-
-                    ArrayList<BookInfo> bis = new ArrayList<BookInfo>();
-
-                    //
-                    // TODO
-                    //
                     for (Goal goal : myGoal) {
+
+                        //find other seller and prepare a CFP
+                        ServiceDescription sd = new ServiceDescription();
+                        sd.setType("book-trader");
+                        DFAgentDescription dfd = new DFAgentDescription();
+                        dfd.addServices(sd);
+
+                        DFAgentDescription[] traders = DFService.search(myAgent, dfd);
+
+                        ACLMessage buyBook = new ACLMessage(ACLMessage.CFP);
+                        buyBook.setLanguage(codec.getName());
+                        buyBook.setOntology(onto.getName());
+                        buyBook.setReplyByDate(new Date(System.currentTimeMillis() + 5000));
+
+                        for (DFAgentDescription dfad : traders) {
+                            if (dfad.getName().equals(myAgent.getAID())) {
+                                continue;
+                            }
+                            buyBook.addReceiver(dfad.getName());
+                        }
+
+                        ArrayList<BookInfo> bis = new ArrayList<>();
+
                         BookInfo bi = new BookInfo();
                         bi.setBookName(goal.getBook().getBookName());
                         bis.add(bi);
+
+                        SellMeBooks smb = new SellMeBooks();
+                        smb.setBooks(bis);
+
+                        getContentManager().fillContent(buyBook, new Action(myAgent.getAID(), smb));
+                        addBehaviour(new ObtainBook(myAgent, buyBook));
+
                     }
 
-                    SellMeBooks smb = new SellMeBooks();
-                    smb.setBooks(bis);
-
-                    getContentManager().fillContent(buyBook, new Action(myAgent.getAID(), smb));
-                    addBehaviour(new ObtainBook(myAgent, buyBook));
-                } catch (Codec.CodecException e) {
-                    e.printStackTrace();
-                } catch (OntologyException e) {
-                    e.printStackTrace();
-                } catch (FIPAException e) {
+                } catch (Codec.CodecException | OntologyException | FIPAException e) {
                     e.printStackTrace();
                 }
 
@@ -282,6 +279,7 @@ public class BookTraderImproved extends Agent {
                 Iterator it = responses.iterator();
 
                 //we need to accept only one offer, otherwise we create two transactions with the same ID
+                // @TODO choose best offer - after reading all offers
                 boolean accepted = false;
                 while (it.hasNext()) {
                     ACLMessage response = (ACLMessage) it.next();
@@ -304,6 +302,21 @@ public class BookTraderImproved extends Agent {
                             if (o.getMoney() > myMoney) {
                                 continue;
                             }
+                            
+                            // @TODO REMOVE - this ignores all offers containing books
+                            if (o.getBooks() != null && o.getBooks().size() > 0) {
+                                continue;
+                            }
+                            
+                            // dont buy books we already have
+                            boolean buyingSecondGoal = false;
+                            for(BookInfo b : cf.getWillSell()){
+                                for (BookInfo bg : myBooks) {
+                                    if (bg.getBookName().equals(b.getBookName())) {
+                                        buyingSecondGoal = true;
+                                    }
+                                }
+                            }
 
                             boolean foundAll = true;
                             if (o.getBooks() != null) {
@@ -324,7 +337,7 @@ public class BookTraderImproved extends Agent {
                                 }
                             }
 
-                            if (foundAll) {
+                            if (foundAll && !buyingSecondGoal) {
                                 canFulfill.add(o);
                             }
                         }
@@ -347,6 +360,8 @@ public class BookTraderImproved extends Agent {
 
                         c = ch;
                         shouldReceive = cf.getWillSell();
+                        
+                        System.out.println(myAgent.getName() + " buying for " + c.getOffer().getMoney());//+ " books: " + c.getOffer().getBooks().stream().map(Object::toString).collect(Collectors.joining(" ")));
 
                         getContentManager().fillContent(acc, ch);
                         acceptances.add(acc);
@@ -406,28 +421,31 @@ public class BookTraderImproved extends Agent {
                         }
                     }
 
-                    //
-                    // TODO
-                    //
                     ArrayList<Offer> offers = new ArrayList<>();
+                    double sellPrice = 0;
+                    boolean isGoalInside = false;
                     for (BookInfo toSell : sellBooks) {
-                        Offer offer = new Offer();
-                        boolean found = false;
+                        
+                        double priceForBook = Constants.bookPrices.get(toSell.getBookName()) - 20; // @TODO choose wisely
+                        
                         for (Goal goal : myGoal) {
-                            if (goal.getBook().equals(toSell)) {
-                                offer.setMoney(goal.getValue() + rnd.nextInt(10));
-                                offers.add(offer);
-                                found = true;
+                            if (goal.getBook().getBookName().equals(toSell.getBookName())) {
+                                priceForBook = goal.getValue() + rnd.nextInt(10);
+                                isGoalInside = true;
                                 break;
                             }
                         }
-                        if (found) {
-                            continue;
-                        }
-                        double minAcceptableValue = Constants.bookPrices.get(toSell.getBookName()) - 20;
-                        offer.setMoney(minAcceptableValue + rnd.nextInt(5));
-                        offers.add(offer);
+                        
+                        sellPrice += priceForBook;
                     }
+                    
+                    System.out.println(myAgent.getName() + " offering for " + sellPrice + " books: " + sellBooks.stream().map(Object::toString).collect(Collectors.joining(" ")));
+                    
+                    Offer offer = new Offer();
+                    offer.setMoney(sellPrice);
+                    offers.add(offer);
+                    
+                    // @TODO offer book for book
 
                     ChooseFrom cf = new ChooseFrom();
 
