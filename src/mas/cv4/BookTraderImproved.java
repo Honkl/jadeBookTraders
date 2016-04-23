@@ -363,7 +363,18 @@ public class BookTraderImproved extends Agent {
 
                         //choose an offer
                         Chosen ch = new Chosen();
-                        ch.setOffer(canFulfill.get(rnd.nextInt(canFulfill.size())));
+                        canFulfill.sort((Offer o1, Offer o2) -> {
+                            double firstOfferValue = getOfferValue(o1);
+                            double secondOfferValue = getOfferValue(o2);
+                            if (firstOfferValue < secondOfferValue) {
+                                return -1;
+                            }
+                            if (firstOfferValue > secondOfferValue) {
+                                return 1;
+                            }
+                            return 0;
+                        });
+                        ch.setOffer(canFulfill.get(0));
 
                         c = ch;
                         shouldReceive = cf.getWillSell();
@@ -381,6 +392,26 @@ public class BookTraderImproved extends Agent {
 
                 }
 
+            }
+
+            /**
+             * Computes value of the specified offer.
+             */
+            private double getOfferValue(Offer offer) {
+                double offerValue = offer.getMoney();
+                for (BookInfo book : offer.getBooks()) {
+                    boolean isMyGoal = false;
+                    for (Goal goal : myGoal) {
+                        if (goal.getBook().getBookName().equals(book.getBookName())) {
+                            offerValue += goal.getValue();
+                            isMyGoal = true;
+                        }
+                    }
+                    if (!isMyGoal) {
+                        offerValue += Constants.bookPrices.get(book.getBookName()) - 20 + rnd.nextInt(10);
+                    }
+                }
+                return offerValue;
             }
         }
 
@@ -433,7 +464,7 @@ public class BookTraderImproved extends Agent {
                     boolean isGoalInside = false;
                     for (BookInfo toSell : sellBooks) {
 
-                        double priceForBook = Constants.bookPrices.get(toSell.getBookName()) - 20; // @TODO choose wisely
+                        double priceForBook = Constants.bookPrices.get(toSell.getBookName()) - 20 + rnd.nextInt(10); // @TODO choose wisely
 
                         for (Goal goal : myGoal) {
                             if (goal.getBook().getBookName().equals(toSell.getBookName())) {
@@ -452,7 +483,28 @@ public class BookTraderImproved extends Agent {
                     offer.setMoney(sellPrice);
                     offers.add(offer);
 
-                    // @TODO offer book for book
+                    // book-for-book, book+money offers
+                    ArrayList<Goal> unsatisfiedGoals = new ArrayList<>();
+                    unsatisfiedGoals.addAll(myGoal);
+                    for (Goal goal : myGoal) {
+                        for (BookInfo myBook : myBooks) {
+                            if (goal.getBook().getBookName().equals(myBook.getBookName())) {
+                                unsatisfiedGoals.remove(goal);
+                            }
+                        }
+                    }
+
+                    for (Goal g : unsatisfiedGoals) {
+                        ArrayList<BookInfo> bis = new ArrayList<>();
+                        bis.add(g.getBook());
+
+                        Offer o = new Offer();
+                        o.setBooks(bis);
+                        double requiredMoney = (sellPrice - g.getValue()) < 0 ? 0 : sellPrice - g.getValue();
+                        o.setMoney(requiredMoney);
+                        offers.add(o);
+                    }
+
                     ChooseFrom cf = new ChooseFrom();
 
                     cf.setWillSell(sellBooks);
