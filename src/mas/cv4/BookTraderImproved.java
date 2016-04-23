@@ -421,27 +421,26 @@ public class BookTraderImproved extends Agent {
                         e.printStackTrace();
                     }
                 }
-                
-                /* DEBUGGING best offer
-                System.out.println("=============");
-                System.out.println("Number of offers:" + index + " , current best offer index"
-                        + currentBestOfferIndex + "current best offer value:" + currentBestOfferValue);
-                if (currentBestOffer != null) {
-                    System.out.println("This offer included: wanted money:" + currentBestOffer.getMoney());
-                    try {
-                        System.out.println("Wanted book:" + ((ChooseFrom) getContentManager().extractContent(responseList.get(currentBestOfferIndex))).getWillSell().get(0).getBookName());
-                    } catch (Codec.CodecException | OntologyException ex) {
-                        Logger.getLogger(BookTraderImproved.class.getName()).log(Level.SEVERE, null, ex);
-                    }
-                    if (currentBestOffer.getBooks() != null) {
-                        for (BookInfo book : currentBestOffer.getBooks()) {
-                            System.out.println("  requested book:" + book.getBookName());
-                        }
-                    }
-                }
-                System.out.println("-----------");
-                */
 
+                /* DEBUGGING best offer
+                 System.out.println("=============");
+                 System.out.println("Number of offers:" + index + " , current best offer index"
+                 + currentBestOfferIndex + "current best offer value:" + currentBestOfferValue);
+                 if (currentBestOffer != null) {
+                 System.out.println("This offer included: wanted money:" + currentBestOffer.getMoney());
+                 try {
+                 System.out.println("Wanted book:" + ((ChooseFrom) getContentManager().extractContent(responseList.get(currentBestOfferIndex))).getWillSell().get(0).getBookName());
+                 } catch (Codec.CodecException | OntologyException ex) {
+                 Logger.getLogger(BookTraderImproved.class.getName()).log(Level.SEVERE, null, ex);
+                 }
+                 if (currentBestOffer.getBooks() != null) {
+                 for (BookInfo book : currentBestOffer.getBooks()) {
+                 System.out.println("  requested book:" + book.getBookName());
+                 }
+                 }
+                 }
+                 System.out.println("-----------");
+                 */
                 //foreach non "REFUSE" proposal, we either accept it (when it's the best offer), or refuse it
                 for (int i = 0; i <= index; i++) {
                     try {
@@ -461,7 +460,6 @@ public class BookTraderImproved extends Agent {
                             shouldReceive = cf.getWillSell();
 
                             //System.out.println(myAgent.getName() + " buying for " + c.getOffer().getMoney() + " books: " + shouldReceive.get(0).getBookName());
-
                             getContentManager().fillContent(acc, ch);
                             acceptances.add(acc);
                         } else {
@@ -496,7 +494,7 @@ public class BookTraderImproved extends Agent {
                     myLoss += getBookValueSell(requestedBook, myGoal);
                 }
             }
-            
+
             double myGain = 0;
             if (offeredBooks != null) {
                 for (BookInfo offeredBook : offeredBooks) {
@@ -559,12 +557,32 @@ public class BookTraderImproved extends Agent {
                 }
 
                 //System.out.println(myAgent.getName() + " offering for " + sellPrice + " books: " + sellBooks.stream().map(Object::toString).collect(Collectors.joining(" ")));
-
                 Offer offer = new Offer();
                 offer.setMoney(sellPrice);
                 offers.add(offer);
 
-                // @TODO offer book for book
+                // book-for-book, book+money offers
+                ArrayList< Goal> unsatisfiedGoals = new ArrayList<>();
+                unsatisfiedGoals.addAll(myGoal);
+                for (Goal goal : myGoal) {
+                    for (BookInfo myBook : myBooks) {
+                        if (goal.getBook().getBookName().equals(myBook.getBookName())) {
+                            unsatisfiedGoals.remove(goal);
+                        }
+                    }
+                }
+
+                for (Goal g : unsatisfiedGoals) {
+                    ArrayList<BookInfo> bis = new ArrayList<>();
+                    bis.add(g.getBook());
+
+                    Offer o = new Offer();
+                    o.setBooks(bis);
+                    double requiredMoney = (sellPrice - g.getValue()) < 0 ? 0 : sellPrice - g.getValue();
+                    o.setMoney(requiredMoney);
+                    offers.add(o);
+                }
+
                 ChooseFrom cf = new ChooseFrom();
 
                 cf.setWillSell(sellBooks);
