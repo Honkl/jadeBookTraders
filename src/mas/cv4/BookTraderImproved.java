@@ -21,6 +21,8 @@ import jade.proto.*;
 import mas.cv4.onto.*;
 
 import java.util.*;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 
 /**
@@ -81,6 +83,63 @@ public class BookTraderImproved extends Agent {
         } catch (FIPAException e) {
             e.printStackTrace();
         }
+    }
+
+    /**
+     * Returns books that are in my goals and I do not own them yet.
+     *
+     * @return
+     */
+    private static List<BookInfo> getUnsatisfiedGoals(List<Goal> myGoals, List<BookInfo> currentlyPossesedBooks) {
+        List<BookInfo> unsatisfiedGoals = new ArrayList<>();
+        for (Goal g : myGoals) {
+            unsatisfiedGoals.add(g.getBook());
+        }
+        unsatisfiedGoals.removeAll(currentlyPossesedBooks);
+
+        return unsatisfiedGoals;
+    }
+
+    /**
+     * Returns the amount of money for which we are willing to sell given book.
+     *
+     * @param book book, which price to evaluate.
+     * @return
+     */
+    private static double getBookValueSell(BookInfo book, List<Goal> myGoal) {
+        Random rnd = new Random();
+        double priceForBook = Constants.bookPrices.get(book.getBookName()) - 20; // @TODO choose wisely
+
+        for (Goal goal : myGoal) {
+            if (goal.getBook().getBookName().equals(book.getBookName())) {
+                priceForBook = goal.getValue() + rnd.nextInt(10);
+            }
+        }
+
+        return priceForBook;
+    }
+
+    /**
+     * Returns the amount of money for which we are willing to buy given book.
+     *
+     * @param book book, which price to evaluate.
+     * @return
+     */
+    private static double getBookValueBuy(BookInfo book, List<Goal> myGoal, List<BookInfo> myBooks) {
+
+        List<BookInfo> unsatisfiedGoals = getUnsatisfiedGoals(myGoal, myBooks);
+
+        //if not in our goals, the book has for us relatively small value
+        double priceForBook = Constants.bookPrices.get(book.getBookName()) / 10; // @TODO choose wisely
+
+        for (Goal goal : myGoal) {
+            //if the book is in our unsatisfied goals and we do not have it yet, than the book has for us quite a high value
+            if (unsatisfiedGoals.contains(goal.getBook()) && goal.getBook().getBookName().equals(book.getBookName())) {
+                priceForBook = goal.getValue() - 10;
+            }
+        }
+
+        return priceForBook;
     }
 
     // waits for the StartTrading message and adds the trading behavior
@@ -166,12 +225,7 @@ public class BookTraderImproved extends Agent {
 
                 try {
                     //try to make request for all books that are in my goals and I do not own them yet                    
-                    ArrayList<BookInfo> unsatisfiedGoals = new ArrayList<>();
-                    for (Goal g : myGoal) {
-                        unsatisfiedGoals.add(g.getBook());
-                    }
-                    unsatisfiedGoals.removeAll(myBooks);
-
+                    List<BookInfo> unsatisfiedGoals = getUnsatisfiedGoals(myGoal, myBooks);
                     for (BookInfo book : unsatisfiedGoals) {
 
                         //find other seller and prepare a CFP
@@ -282,20 +336,36 @@ public class BookTraderImproved extends Agent {
             //process the offers from the sellers
             @Override
             protected void handleAllResponses(Vector responses, Vector acceptances) {
+                /* 
+                 We obtained several offers and should choose only one, which we accept. 
+                 The rest must be refused.                
+                 */
 
                 Iterator it = responses.iterator();
 
-                //we need to accept only one offer, otherwise we create two transactions with the same ID
-                // @TODO choose best offer - after reading all offers
-                boolean accepted = false;
+                //offer, which is currently best for me
+                Offer currentBestOffer = null;
+                //its utility
+                double currentBestOfferValue = Double.MIN_VALUE;
+                //and its index in responses.iterator() (when not couting "REFUSE" responses)
+                int currentBestOfferIndex = -1;
+
+                //all non "REFUSE" responses
+                List<ACLMessage> responseList = new ArrayList<>();
+
+                int index = -1;
                 while (it.hasNext()) {
                     ACLMessage response = (ACLMessage) it.next();
 
                     ContentElement ce = null;
                     try {
                         if (response.getPerformative() == ACLMessage.REFUSE) {
+                            //System.out.println("Enemy refused");
                             continue;
                         }
+
+                        index++;
+                        responseList.add(response);
 
                         ce = getContentManager().extractContent(response);
 
@@ -303,28 +373,18 @@ public class BookTraderImproved extends Agent {
 
                         ArrayList<Offer> offers = cf.getOffers();
 
-                        //find out which offers we can fulfill (we have all requested books and enough money)
-                        ArrayList<Offer> canFulfill = new ArrayList<Offer>();
+                        /*
+                         Foreach offer, check whether we can fulfill it(we have all requested books and enough money).
+                         And if we can, then compute its utility (how much would we gain, when accepting it).
+                         The best offer is than saved.
+                         */
                         for (Offer o : offers) {
+                            //we must have enough money
                             if (o.getMoney() > myMoney) {
                                 continue;
                             }
 
-                            // @TODO REMOVE - this ignores all offers containing books
-                            if (o.getBooks() != null && o.getBooks().size() > 0) {
-                                continue;
-                            }
-
-                            // dont buy books we already have
-                            boolean buyingSecondGoal = false;
-                            for (BookInfo b : cf.getWillSell()) {
-                                for (BookInfo bg : myBooks) {
-                                    if (bg.getBookName().equals(b.getBookName())) {
-                                        buyingSecondGoal = true;
-                                    }
-                                }
-                            }
-
+                            //and all requested books
                             boolean foundAll = true;
                             if (o.getBooks() != null) {
                                 for (BookInfo bi : o.getBooks()) {
@@ -344,247 +404,297 @@ public class BookTraderImproved extends Agent {
                                 }
                             }
 
-                            if (foundAll && !buyingSecondGoal) {
-                                canFulfill.add(o);
+                            if (foundAll) {
+                                double offerUtility = getOfferUtility(o, cf.getWillSell());
+
+                                //if this offer is currently best for us, save it
+                                if (currentBestOffer == null || currentBestOfferValue < offerUtility) {
+                                    currentBestOffer = o;
+                                    currentBestOfferValue = offerUtility;
+                                    currentBestOfferIndex = index;
+                                }
                             }
                         }
-
-                        //if none, we REJECT the proposal, we also reject all proposal if we already accepted one
-                        if (canFulfill.size() == 0 || accepted) {
-                            ACLMessage acc = response.createReply();
-                            acc.setPerformative(ACLMessage.REJECT_PROPOSAL);
-                            acceptances.add(acc);
-                            continue;
-                        }
-
-                        ACLMessage acc = response.createReply();
-                        acc.setPerformative(ACLMessage.ACCEPT_PROPOSAL);
-                        accepted = true;
-
-                        //choose an offer
-                        Chosen ch = new Chosen();
-                        ch.setOffer(canFulfill.get(rnd.nextInt(canFulfill.size())));
-
-                        c = ch;
-                        shouldReceive = cf.getWillSell();
-
-                        System.out.println(myAgent.getName() + " buying for " + c.getOffer().getMoney());//+ " books: " + c.getOffer().getBooks().stream().map(Object::toString).collect(Collectors.joining(" ")));
-
-                        getContentManager().fillContent(acc, ch);
-                        acceptances.add(acc);
-
                     } catch (Codec.CodecException e) {
                         e.printStackTrace();
                     } catch (OntologyException e) {
                         e.printStackTrace();
                     }
-
                 }
-
-            }
-        }
-
-        //this behavior processes the selling of books
-        class SellBook extends SSResponderDispatcher {
-
-            public SellBook(Agent a, MessageTemplate tpl) {
-                super(a, tpl);
-            }
-
-            @Override
-            protected Behaviour createResponder(ACLMessage initiationMsg) {
-                return new SellBookResponder(myAgent, initiationMsg);
-            }
-        }
-
-        class SellBookResponder extends SSContractNetResponder {
-
-            public SellBookResponder(Agent a, ACLMessage cfp) {
-                super(a, cfp);
-            }
-
-            @Override
-            protected ACLMessage handleCfp(ACLMessage cfp) throws RefuseException, FailureException, NotUnderstoodException {
-
-                try {
-                    Action ac = (Action) getContentManager().extractContent(cfp);
-
-                    SellMeBooks smb = (SellMeBooks) ac.getAction();
-                    ArrayList<BookInfo> books = smb.getBooks();
-                    ArrayList<BookInfo> sellBooks = new ArrayList<>();
-
-                    //find out, if we have books the agent wants
-                    for (int i = 0; i < books.size(); i++) {
-                        boolean found = false;
-                        for (int j = 0; j < myBooks.size(); j++) {
-                            if (myBooks.get(j).getBookName().equals(books.get(i).getBookName())) {
-                                sellBooks.add(myBooks.get(j));
-                                found = true;
-                                break;
-                            }
-                        }
-                        if (!found) {
-                            throw new RefuseException("");
+                
+                /* DEBUGGING best offer
+                System.out.println("=============");
+                System.out.println("Number of offers:" + index + " , current best offer index"
+                        + currentBestOfferIndex + "current best offer value:" + currentBestOfferValue);
+                if (currentBestOffer != null) {
+                    System.out.println("This offer included: wanted money:" + currentBestOffer.getMoney());
+                    try {
+                        System.out.println("Wanted book:" + ((ChooseFrom) getContentManager().extractContent(responseList.get(currentBestOfferIndex))).getWillSell().get(0).getBookName());
+                    } catch (Codec.CodecException | OntologyException ex) {
+                        Logger.getLogger(BookTraderImproved.class.getName()).log(Level.SEVERE, null, ex);
+                    }
+                    if (currentBestOffer.getBooks() != null) {
+                        for (BookInfo book : currentBestOffer.getBooks()) {
+                            System.out.println("  requested book:" + book.getBookName());
                         }
                     }
+                }
+                System.out.println("-----------");
+                */
 
-                    ArrayList<Offer> offers = new ArrayList<>();
-                    double sellPrice = 0;
-                    boolean isGoalInside = false;
-                    for (BookInfo toSell : sellBooks) {
+                //foreach non "REFUSE" proposal, we either accept it (when it's the best offer), or refuse it
+                for (int i = 0; i <= index; i++) {
+                    try {
+                        ACLMessage response = responseList.get(i);
 
-                        double priceForBook = Constants.bookPrices.get(toSell.getBookName()) - 20; // @TODO choose wisely
+                        //when it is the best offer and we will not lose money on this offer
+                        if (i == currentBestOfferIndex && currentBestOfferValue > 0) {
 
-                        for (Goal goal : myGoal) {
-                            if (goal.getBook().getBookName().equals(toSell.getBookName())) {
-                                priceForBook = goal.getValue() + rnd.nextInt(10);
-                                isGoalInside = true;
-                                break;
-                            }
+                            ACLMessage acc = response.createReply();
+                            acc.setPerformative(ACLMessage.ACCEPT_PROPOSAL);
+
+                            Chosen ch = new Chosen();
+                            ch.setOffer(currentBestOffer);
+
+                            ChooseFrom cf = (ChooseFrom) getContentManager().extractContent(response);
+                            c = ch;
+                            shouldReceive = cf.getWillSell();
+
+                            //System.out.println(myAgent.getName() + " buying for " + c.getOffer().getMoney() + " books: " + shouldReceive.get(0).getBookName());
+
+                            getContentManager().fillContent(acc, ch);
+                            acceptances.add(acc);
+                        } else {
+                            ACLMessage acc = response.createReply();
+                            acc.setPerformative(ACLMessage.REJECT_PROPOSAL);
+                            acceptances.add(acc);
                         }
-
-                        sellPrice += priceForBook;
+                    } catch (Codec.CodecException e) {
+                        e.printStackTrace();
+                    } catch (OntologyException e) {
+                        e.printStackTrace();
                     }
-
-                    System.out.println(myAgent.getName() + " offering for " + sellPrice + " books: " + sellBooks.stream().map(Object::toString).collect(Collectors.joining(" ")));
-
-                    Offer offer = new Offer();
-                    offer.setMoney(sellPrice);
-                    offers.add(offer);
-
-                    // @TODO offer book for book
-                    ChooseFrom cf = new ChooseFrom();
-
-                    cf.setWillSell(sellBooks);
-                    cf.setOffers(offers);
-
-                    //send the offers
-                    ACLMessage reply = cfp.createReply();
-                    reply.setPerformative(ACLMessage.PROPOSE);
-                    reply.setReplyByDate(new Date(System.currentTimeMillis() + 5000));
-                    getContentManager().fillContent(reply, cf);
-
-                    return reply;
-                } catch (UngroundedException e) {
-                    e.printStackTrace();
-                } catch (Codec.CodecException e) {
-                    e.printStackTrace();
-                } catch (OntologyException e) {
-                    e.printStackTrace();
                 }
-
-                throw new FailureException("");
             }
 
-            //the buyer decided to accept an offer
-            @Override
-            protected ACLMessage handleAcceptProposal(ACLMessage cfp, ACLMessage propose, ACLMessage accept) throws FailureException {
-
-                try {
-                    ChooseFrom cf = (ChooseFrom) getContentManager().extractContent(propose);
-
-                    //prepare the transaction info and send it to the environment
-                    MakeTransaction mt = new MakeTransaction();
-
-                    mt.setSenderName(myAgent.getName());
-                    mt.setReceiverName(cfp.getSender().getName());
-                    mt.setTradeConversationID(cfp.getConversationId());
-
-                    if (cf.getWillSell() == null) {
-                        cf.setWillSell(new ArrayList<BookInfo>());
-                    }
-
-                    mt.setSendingBooks(cf.getWillSell());
-                    mt.setSendingMoney(0.0);
-
-                    Chosen c = (Chosen) getContentManager().extractContent(accept);
-
-                    if (c.getOffer().getBooks() == null) {
-                        c.getOffer().setBooks(new ArrayList<BookInfo>());
-                    }
-
-                    mt.setReceivingBooks(c.getOffer().getBooks());
-                    mt.setReceivingMoney(c.getOffer().getMoney());
-
-                    ServiceDescription sd = new ServiceDescription();
-                    sd.setType("environment");
-                    DFAgentDescription dfd = new DFAgentDescription();
-                    dfd.addServices(sd);
-
-                    DFAgentDescription[] envs = DFService.search(myAgent, dfd);
-
-                    ACLMessage transReq = new ACLMessage(ACLMessage.REQUEST);
-                    transReq.addReceiver(envs[0].getName());
-                    transReq.setLanguage(codec.getName());
-                    transReq.setOntology(onto.getName());
-                    transReq.setReplyByDate(new Date(System.currentTimeMillis() + 5000));
-
-                    getContentManager().fillContent(transReq, new Action(envs[0].getName(), mt));
-
-                    addBehaviour(new SendBook(myAgent, transReq));
-
-                    ACLMessage reply = accept.createReply();
-                    reply.setPerformative(ACLMessage.INFORM);
-                    return reply;
-
-                } catch (UngroundedException e) {
-                    e.printStackTrace();
-                } catch (OntologyException e) {
-                    e.printStackTrace();
-                } catch (Codec.CodecException e) {
-                    e.printStackTrace();
-                } catch (FIPAException e) {
-                    e.printStackTrace();
-                }
-
-                throw new FailureException("");
-            }
         }
 
-        //after the transaction is complete (the environment returned an INFORM), we update our information
-        class SendBook extends AchieveREInitiator {
+        /**
+         * Computes the money gain when making transaction with the given offer.
+         *
+         * @param offer offer to evaluate
+         * @param offeredBooks books that were offered to us
+         * @return utility computed as (myGain - myLoss)
+         */
+        private double getOfferUtility(Offer offer, List<BookInfo> offeredBooks) {
+            double requestedMoney = offer.getMoney();
+            List<BookInfo> requestedBooks = offer.getBooks();
 
-            public SendBook(Agent a, ACLMessage msg) {
-                super(a, msg);
-            }
-
-            @Override
-            protected void handleInform(ACLMessage inform) {
-
-                try {
-                    ACLMessage getMyInfo = new ACLMessage(ACLMessage.REQUEST);
-                    getMyInfo.setLanguage(codec.getName());
-                    getMyInfo.setOntology(onto.getName());
-
-                    ServiceDescription sd = new ServiceDescription();
-                    sd.setType("environment");
-                    DFAgentDescription dfd = new DFAgentDescription();
-                    dfd.addServices(sd);
-
-                    DFAgentDescription[] envs = DFService.search(myAgent, dfd);
-
-                    getMyInfo.addReceiver(envs[0].getName());
-                    getContentManager().fillContent(getMyInfo, new Action(envs[0].getName(), new GetMyInfo()));
-
-                    ACLMessage myInfo = FIPAService.doFipaRequestClient(myAgent, getMyInfo);
-
-                    Result res = (Result) getContentManager().extractContent(myInfo);
-
-                    AgentInfo ai = (AgentInfo) res.getValue();
-
-                    myBooks = ai.getBooks();
-                    myGoal = ai.getGoals();
-                    myMoney = ai.getMoney();
-                } catch (OntologyException e) {
-                    e.printStackTrace();
-                } catch (FIPAException e) {
-                    e.printStackTrace();
-                } catch (Codec.CodecException e) {
-                    e.printStackTrace();
+            double myLoss = requestedMoney;
+            if (requestedBooks != null) {
+                for (BookInfo requestedBook : requestedBooks) {
+                    myLoss += getBookValueSell(requestedBook, myGoal);
                 }
-
             }
+            
+            double myGain = 0;
+            if (offeredBooks != null) {
+                for (BookInfo offeredBook : offeredBooks) {
+                    myGain += getBookValueBuy(offeredBook, myGoal, myBooks);
+                }
+            }
+            //System.out.println("Utility for " + offeredBooks.get(0).getBookName() + "is "  + (myGain - myLoss) );
+            return (myGain - myLoss);
         }
     }
 
+    //this behavior processes the selling of books
+    class SellBook extends SSResponderDispatcher {
+
+        public SellBook(Agent a, MessageTemplate tpl) {
+            super(a, tpl);
+        }
+
+        @Override
+        protected Behaviour createResponder(ACLMessage initiationMsg) {
+            return new SellBookResponder(myAgent, initiationMsg);
+        }
+    }
+
+    class SellBookResponder extends SSContractNetResponder {
+
+        public SellBookResponder(Agent a, ACLMessage cfp) {
+            super(a, cfp);
+        }
+
+        @Override
+        protected ACLMessage handleCfp(ACLMessage cfp) throws RefuseException, FailureException, NotUnderstoodException {
+
+            try {
+                Action ac = (Action) getContentManager().extractContent(cfp);
+
+                SellMeBooks smb = (SellMeBooks) ac.getAction();
+                ArrayList<BookInfo> books = smb.getBooks();
+                ArrayList<BookInfo> sellBooks = new ArrayList<>();
+
+                //find out, if we have books the agent wants
+                for (int i = 0; i < books.size(); i++) {
+                    boolean found = false;
+                    for (int j = 0; j < myBooks.size(); j++) {
+                        if (myBooks.get(j).getBookName().equals(books.get(i).getBookName())) {
+                            sellBooks.add(myBooks.get(j));
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) {
+                        throw new RefuseException("");
+                    }
+                }
+
+                ArrayList<Offer> offers = new ArrayList<>();
+                double sellPrice = 0;
+                for (BookInfo toSell : sellBooks) {
+                    sellPrice += getBookValueSell(toSell, myGoal);
+                }
+
+                //System.out.println(myAgent.getName() + " offering for " + sellPrice + " books: " + sellBooks.stream().map(Object::toString).collect(Collectors.joining(" ")));
+
+                Offer offer = new Offer();
+                offer.setMoney(sellPrice);
+                offers.add(offer);
+
+                // @TODO offer book for book
+                ChooseFrom cf = new ChooseFrom();
+
+                cf.setWillSell(sellBooks);
+                cf.setOffers(offers);
+
+                //send the offers
+                ACLMessage reply = cfp.createReply();
+                reply.setPerformative(ACLMessage.PROPOSE);
+                reply.setReplyByDate(new Date(System.currentTimeMillis() + 5000));
+                getContentManager().fillContent(reply, cf);
+
+                return reply;
+            } catch (UngroundedException e) {
+                e.printStackTrace();
+            } catch (Codec.CodecException e) {
+                e.printStackTrace();
+            } catch (OntologyException e) {
+                e.printStackTrace();
+            }
+
+            throw new FailureException("");
+        }
+
+        //the buyer decided to accept an offer
+        @Override
+        protected ACLMessage handleAcceptProposal(ACLMessage cfp, ACLMessage propose, ACLMessage accept) throws FailureException {
+
+            try {
+                ChooseFrom cf = (ChooseFrom) getContentManager().extractContent(propose);
+
+                //prepare the transaction info and send it to the environment
+                MakeTransaction mt = new MakeTransaction();
+
+                mt.setSenderName(myAgent.getName());
+                mt.setReceiverName(cfp.getSender().getName());
+                mt.setTradeConversationID(cfp.getConversationId());
+
+                if (cf.getWillSell() == null) {
+                    cf.setWillSell(new ArrayList<BookInfo>());
+                }
+
+                mt.setSendingBooks(cf.getWillSell());
+                mt.setSendingMoney(0.0);
+
+                Chosen c = (Chosen) getContentManager().extractContent(accept);
+
+                if (c.getOffer().getBooks() == null) {
+                    c.getOffer().setBooks(new ArrayList<BookInfo>());
+                }
+
+                mt.setReceivingBooks(c.getOffer().getBooks());
+                mt.setReceivingMoney(c.getOffer().getMoney());
+
+                ServiceDescription sd = new ServiceDescription();
+                sd.setType("environment");
+                DFAgentDescription dfd = new DFAgentDescription();
+                dfd.addServices(sd);
+
+                DFAgentDescription[] envs = DFService.search(myAgent, dfd);
+
+                ACLMessage transReq = new ACLMessage(ACLMessage.REQUEST);
+                transReq.addReceiver(envs[0].getName());
+                transReq.setLanguage(codec.getName());
+                transReq.setOntology(onto.getName());
+                transReq.setReplyByDate(new Date(System.currentTimeMillis() + 5000));
+
+                getContentManager().fillContent(transReq, new Action(envs[0].getName(), mt));
+
+                addBehaviour(new SendBook(myAgent, transReq));
+
+                ACLMessage reply = accept.createReply();
+                reply.setPerformative(ACLMessage.INFORM);
+                return reply;
+
+            } catch (UngroundedException e) {
+                e.printStackTrace();
+            } catch (OntologyException e) {
+                e.printStackTrace();
+            } catch (Codec.CodecException e) {
+                e.printStackTrace();
+            } catch (FIPAException e) {
+                e.printStackTrace();
+            }
+
+            throw new FailureException("");
+        }
+    }
+
+    //after the transaction is complete (the environment returned an INFORM), we update our information
+    class SendBook extends AchieveREInitiator {
+
+        public SendBook(Agent a, ACLMessage msg) {
+            super(a, msg);
+        }
+
+        @Override
+        protected void handleInform(ACLMessage inform) {
+
+            try {
+                ACLMessage getMyInfo = new ACLMessage(ACLMessage.REQUEST);
+                getMyInfo.setLanguage(codec.getName());
+                getMyInfo.setOntology(onto.getName());
+
+                ServiceDescription sd = new ServiceDescription();
+                sd.setType("environment");
+                DFAgentDescription dfd = new DFAgentDescription();
+                dfd.addServices(sd);
+
+                DFAgentDescription[] envs = DFService.search(myAgent, dfd);
+
+                getMyInfo.addReceiver(envs[0].getName());
+                getContentManager().fillContent(getMyInfo, new Action(envs[0].getName(), new GetMyInfo()));
+
+                ACLMessage myInfo = FIPAService.doFipaRequestClient(myAgent, getMyInfo);
+
+                Result res = (Result) getContentManager().extractContent(myInfo);
+
+                AgentInfo ai = (AgentInfo) res.getValue();
+
+                myBooks = ai.getBooks();
+                myGoal = ai.getGoals();
+                myMoney = ai.getMoney();
+            } catch (OntologyException e) {
+                e.printStackTrace();
+            } catch (FIPAException e) {
+                e.printStackTrace();
+            } catch (Codec.CodecException e) {
+                e.printStackTrace();
+            }
+
+        }
+    }
 }
