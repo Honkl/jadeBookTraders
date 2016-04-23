@@ -24,12 +24,13 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Created by Martin Pilat on 16.4.14.
+ * Created by Martin Pilat and modified by Jan Kluj, Jakub Naplava and Ondrej
+ * Svec..
  *
- * A simple (testing) version of the trading agent. The agent does not trade in
- * any reasonable way, it only ensures it does not sell bosks it does not own
- * (but it can still happed from time to time if two agents asks for the same
- * book at the same time).
+ * A more advanced version of the trading agent. The agent tries to buy all
+ * books that are in his goals. As for the selling, the non-goal books are sold
+ * for the minimal price as specified in Constant class, and the goal books are
+ * sold for the price that is higher than it has for me.
  *
  */
 public class BookTraderImproved extends Agent {
@@ -164,8 +165,14 @@ public class BookTraderImproved extends Agent {
             protected void onTick() {
 
                 try {
+                    //try to make request for all books that are in my goals and I do not own them yet                    
+                    ArrayList<BookInfo> unsatisfiedGoals = new ArrayList<>();
+                    for (Goal g : myGoal) {
+                        unsatisfiedGoals.add(g.getBook());
+                    }
+                    unsatisfiedGoals.removeAll(myBooks);
 
-                    for (Goal goal : myGoal) {
+                    for (BookInfo book : unsatisfiedGoals) {
 
                         //find other seller and prepare a CFP
                         ServiceDescription sd = new ServiceDescription();
@@ -190,7 +197,7 @@ public class BookTraderImproved extends Agent {
                         ArrayList<BookInfo> bis = new ArrayList<>();
 
                         BookInfo bi = new BookInfo();
-                        bi.setBookName(goal.getBook().getBookName());
+                        bi.setBookName(book.getBookName());
                         bis.add(bi);
 
                         SellMeBooks smb = new SellMeBooks();
@@ -302,15 +309,15 @@ public class BookTraderImproved extends Agent {
                             if (o.getMoney() > myMoney) {
                                 continue;
                             }
-                            
+
                             // @TODO REMOVE - this ignores all offers containing books
                             if (o.getBooks() != null && o.getBooks().size() > 0) {
                                 continue;
                             }
-                            
+
                             // dont buy books we already have
                             boolean buyingSecondGoal = false;
-                            for(BookInfo b : cf.getWillSell()){
+                            for (BookInfo b : cf.getWillSell()) {
                                 for (BookInfo bg : myBooks) {
                                     if (bg.getBookName().equals(b.getBookName())) {
                                         buyingSecondGoal = true;
@@ -360,7 +367,7 @@ public class BookTraderImproved extends Agent {
 
                         c = ch;
                         shouldReceive = cf.getWillSell();
-                        
+
                         System.out.println(myAgent.getName() + " buying for " + c.getOffer().getMoney());//+ " books: " + c.getOffer().getBooks().stream().map(Object::toString).collect(Collectors.joining(" ")));
 
                         getContentManager().fillContent(acc, ch);
@@ -425,9 +432,9 @@ public class BookTraderImproved extends Agent {
                     double sellPrice = 0;
                     boolean isGoalInside = false;
                     for (BookInfo toSell : sellBooks) {
-                        
+
                         double priceForBook = Constants.bookPrices.get(toSell.getBookName()) - 20; // @TODO choose wisely
-                        
+
                         for (Goal goal : myGoal) {
                             if (goal.getBook().getBookName().equals(toSell.getBookName())) {
                                 priceForBook = goal.getValue() + rnd.nextInt(10);
@@ -435,18 +442,17 @@ public class BookTraderImproved extends Agent {
                                 break;
                             }
                         }
-                        
+
                         sellPrice += priceForBook;
                     }
-                    
+
                     System.out.println(myAgent.getName() + " offering for " + sellPrice + " books: " + sellBooks.stream().map(Object::toString).collect(Collectors.joining(" ")));
-                    
+
                     Offer offer = new Offer();
                     offer.setMoney(sellPrice);
                     offers.add(offer);
-                    
-                    // @TODO offer book for book
 
+                    // @TODO offer book for book
                     ChooseFrom cf = new ChooseFrom();
 
                     cf.setWillSell(sellBooks);
