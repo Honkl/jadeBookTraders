@@ -21,13 +21,10 @@ import jade.proto.*;
 import mas.cv4.onto.*;
 
 import java.util.*;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 /**
  * Created by Martin Pilat and modified by Jan Kluj, Jakub Naplava and Ondrej
- * Svec..
+ * Svec.
  *
  * A more advanced version of the trading agent. The agent tries to buy all
  * books that are in his goals. As for the selling, the non-goal books are sold
@@ -90,7 +87,7 @@ public class BookTraderImproved extends Agent {
      *
      * @return
      */
-    private static List<BookInfo> getUnsatisfiedGoals(List<Goal> myGoals, List<BookInfo> currentlyPossesedBooks) {
+    private static List<BookInfo> getUnsatisfiedGoalBooks(List<Goal> myGoals, List<BookInfo> currentlyPossesedBooks) {
         List<BookInfo> unsatisfiedGoals = new ArrayList<>();
         for (Goal g : myGoals) {
             unsatisfiedGoals.add(g.getBook());
@@ -101,18 +98,39 @@ public class BookTraderImproved extends Agent {
     }
 
     /**
+     * Returns my goals that are yet not satisfied.
+     *
+     * @return
+     */
+    private static List<Goal> getUnsatisfiedGoals(List<Goal> myGoal, List<BookInfo> myBooks) {
+        List<Goal> unsatisfiedGoals = new ArrayList<>();
+        unsatisfiedGoals.addAll(myGoal);
+        for (Goal goal : myGoal) {
+            for (BookInfo myBook : myBooks) {
+                if (goal.getBook().getBookName().equals(myBook.getBookName())) {
+                    unsatisfiedGoals.remove(goal);
+                }
+            }
+        }
+
+        return unsatisfiedGoals;
+    }
+
+    /**
      * Returns the amount of money for which we are willing to sell given book.
      *
      * @param book book, which price to evaluate.
      * @return
      */
-    private static double getBookValueSell(BookInfo book, List<Goal> myGoal) {
+    private static double getBookValueSell(BookInfo book, List<Goal> myGoal, List<BookInfo> myBooks) {
         Random rnd = new Random();
+        List<Goal> unsatisfiedGoals = getUnsatisfiedGoals(myGoal, myBooks);
+
         double priceForBook = Constants.bookPrices.get(book.getBookName()) - 20; // @TODO choose wisely
 
-        for (Goal goal : myGoal) {
+        for (Goal goal : unsatisfiedGoals) {
             if (goal.getBook().getBookName().equals(book.getBookName())) {
-                priceForBook = goal.getValue() + rnd.nextInt(10);
+                priceForBook = goal.getValue() + rnd.nextInt(10) + 1;
             }
         }
 
@@ -127,7 +145,7 @@ public class BookTraderImproved extends Agent {
      */
     private static double getBookValueBuy(BookInfo book, List<Goal> myGoal, List<BookInfo> myBooks) {
 
-        List<BookInfo> unsatisfiedGoals = getUnsatisfiedGoals(myGoal, myBooks);
+        List<BookInfo> unsatisfiedGoals = getUnsatisfiedGoalBooks(myGoal, myBooks);
 
         //if not in our goals, the book has for us relatively small value
         double priceForBook = Constants.bookPrices.get(book.getBookName()) / 10; // @TODO choose wisely
@@ -225,7 +243,7 @@ public class BookTraderImproved extends Agent {
 
                 try {
                     //try to make request for all books that are in my goals and I do not own them yet                    
-                    List<BookInfo> unsatisfiedGoals = getUnsatisfiedGoals(myGoal, myBooks);
+                    List<BookInfo> unsatisfiedGoals = getUnsatisfiedGoalBooks(myGoal, myBooks);
                     for (BookInfo book : unsatisfiedGoals) {
 
                         //find other seller and prepare a CFP
@@ -491,7 +509,7 @@ public class BookTraderImproved extends Agent {
             double myLoss = requestedMoney;
             if (requestedBooks != null) {
                 for (BookInfo requestedBook : requestedBooks) {
-                    myLoss += getBookValueSell(requestedBook, myGoal);
+                    myLoss += getBookValueSell(requestedBook, myGoal, myBooks);
                 }
             }
 
@@ -553,7 +571,7 @@ public class BookTraderImproved extends Agent {
                 ArrayList<Offer> offers = new ArrayList<>();
                 double sellPrice = 0;
                 for (BookInfo toSell : sellBooks) {
-                    sellPrice += getBookValueSell(toSell, myGoal);
+                    sellPrice += getBookValueSell(toSell, myGoal, myBooks);
                 }
 
                 //System.out.println(myAgent.getName() + " offering for " + sellPrice + " books: " + sellBooks.stream().map(Object::toString).collect(Collectors.joining(" ")));
@@ -561,28 +579,28 @@ public class BookTraderImproved extends Agent {
                 offer.setMoney(sellPrice);
                 offers.add(offer);
 
-                // book-for-book, book+money offers
-                ArrayList< Goal> unsatisfiedGoals = new ArrayList<>();
-                unsatisfiedGoals.addAll(myGoal);
-                for (Goal goal : myGoal) {
-                    for (BookInfo myBook : myBooks) {
-                        if (goal.getBook().getBookName().equals(myBook.getBookName())) {
-                            unsatisfiedGoals.remove(goal);
-                        }
-                    }
-                }
+                /*
+                 // book-for-book, book+money offers
+                 ArrayList< Goal> unsatisfiedGoals = new ArrayList<>();
+                 unsatisfiedGoals.addAll(myGoal);
+                 for (Goal goal : myGoal) {
+                 for (BookInfo myBook : myBooks) {
+                 if (goal.getBook().getBookName().equals(myBook.getBookName())) {
+                 unsatisfiedGoals.remove(goal);
+                 }
+                 }
+                 }
 
-                for (Goal g : unsatisfiedGoals) {
-                    ArrayList<BookInfo> bis = new ArrayList<>();
-                    bis.add(g.getBook());
+                 for (Goal g : unsatisfiedGoals) {
+                 ArrayList<BookInfo> bis = new ArrayList<>();
+                 bis.add(g.getBook());
 
-                    Offer o = new Offer();
-                    o.setBooks(bis);
-                    double requiredMoney = (sellPrice - g.getValue()) < 0 ? 0 : sellPrice - g.getValue();
-                    o.setMoney(requiredMoney);
-                    offers.add(o);
-                }
-
+                 Offer o = new Offer();
+                 o.setBooks(bis);
+                 double requiredMoney = (sellPrice - g.getValue()) < 0 ? 0 : sellPrice - g.getValue();
+                 o.setMoney(requiredMoney);
+                 offers.add(o);
+                 }*/
                 ChooseFrom cf = new ChooseFrom();
 
                 cf.setWillSell(sellBooks);
