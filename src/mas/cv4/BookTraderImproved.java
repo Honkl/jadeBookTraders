@@ -145,15 +145,15 @@ public class BookTraderImproved extends Agent {
      */
     private static double getBookValueBuy(BookInfo book, List<Goal> myGoal, List<BookInfo> myBooks) {
 
-        List<BookInfo> unsatisfiedGoals = getUnsatisfiedGoalBooks(myGoal, myBooks);
+        List<Goal> unsatisfiedGoals = getUnsatisfiedGoals(myGoal, myBooks);
 
         //if not in our goals, the book has for us relatively small value
         double priceForBook = Constants.bookPrices.get(book.getBookName()) / 10; // @TODO choose wisely
 
-        for (Goal goal : myGoal) {
+        for (Goal unsatisfiedGoal : unsatisfiedGoals) {
             //if the book is in our unsatisfied goals and we do not have it yet, than the book has for us quite a high value
-            if (unsatisfiedGoals.contains(goal.getBook()) && goal.getBook().getBookName().equals(book.getBookName())) {
-                priceForBook = goal.getValue() - 10;
+            if (unsatisfiedGoal.getBook().getBookName().equals(book.getBookName())) {
+                priceForBook = unsatisfiedGoal.getValue() - 10;
             }
         }
 
