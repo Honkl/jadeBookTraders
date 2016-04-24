@@ -1,5 +1,6 @@
 package mas.cv4;
 
+import FIPA.DateTime;
 import jade.content.ContentElement;
 import jade.content.lang.Codec;
 import jade.content.lang.sl.SLCodec;
@@ -40,6 +41,9 @@ public class BookTraderImproved extends Agent {
     ArrayList<BookInfo> myBooks;
     ArrayList<Goal> myGoal;
     double myMoney;
+    static long dateStarted;
+    
+    public static final long MAXTIME = 120;
 
     Random rnd = new Random();
 
@@ -115,6 +119,20 @@ public class BookTraderImproved extends Agent {
 
         return unsatisfiedGoals;
     }
+    
+    private static long getSecondsFromStart() {
+        return (System.currentTimeMillis()/1000) - dateStarted;
+    }
+    
+    private static double getValueDifferenceInTimeIncreasing(double max, double min) {
+        long seconds = getSecondsFromStart();
+        return min + Math.min(seconds, BookTraderImproved.MAXTIME) * ( max - min ) / BookTraderImproved.MAXTIME;
+    }
+    
+    private static double getValueDifferenceInTimeDecreasing(double max, double min) {
+        long seconds = getSecondsFromStart();
+        return max - Math.min(seconds, BookTraderImproved.MAXTIME) * ( max - min ) / BookTraderImproved.MAXTIME;
+    }
 
     /**
      * Returns the amount of money for which we are willing to sell given book.
@@ -123,14 +141,23 @@ public class BookTraderImproved extends Agent {
      * @return
      */
     private static double getBookValueSell(BookInfo book, List<Goal> myGoal, List<BookInfo> myBooks) {
-        Random rnd = new Random();
-        List<Goal> unsatisfiedGoals = getUnsatisfiedGoals(myGoal, myBooks);
+        double priceForBook = getValueDifferenceInTimeDecreasing(Constants.bookPrices.get(book.getBookName()), 1); // @TODO choose wisely
 
-        double priceForBook = Constants.bookPrices.get(book.getBookName()) - 20; // @TODO choose wisely
-
-        for (Goal goal : unsatisfiedGoals) {
+        for (Goal goal : myGoal) {
             if (goal.getBook().getBookName().equals(book.getBookName())) {
-                priceForBook = goal.getValue() + rnd.nextInt(10) + 1;
+                
+                // if we have the goal two times, we can get rid of one for default price (above)
+                int howManyWeHave = 0;
+                for(BookInfo goalWeHave : myBooks){
+                    if (goal.getBook().getBookName().equals(goalWeHave.getBookName())) {
+                        howManyWeHave++;
+                    }
+                }
+
+                // if we only have one goal, sell it at high price
+                if (howManyWeHave <= 1) {
+                    priceForBook = getValueDifferenceInTimeDecreasing(goal.getValue() * 1.25, goal.getValue() + 1);  // @TODO choose wisely
+                }
             }
         }
 
@@ -148,12 +175,12 @@ public class BookTraderImproved extends Agent {
         List<Goal> unsatisfiedGoals = getUnsatisfiedGoals(myGoal, myBooks);
 
         //if not in our goals, the book has for us relatively small value
-        double priceForBook = Constants.bookPrices.get(book.getBookName()) / 10; // @TODO choose wisely
+        double priceForBook = getValueDifferenceInTimeDecreasing(Constants.bookPrices.get(book.getBookName()) / 5, 0); // @TODO choose wisely
 
         for (Goal unsatisfiedGoal : unsatisfiedGoals) {
             //if the book is in our unsatisfied goals and we do not have it yet, than the book has for us quite a high value
             if (unsatisfiedGoal.getBook().getBookName().equals(book.getBookName())) {
-                priceForBook = unsatisfiedGoal.getValue() - 10;
+                priceForBook = getValueDifferenceInTimeIncreasing(unsatisfiedGoal.getValue(), 0.7 * unsatisfiedGoal.getValue()) - 1;  // @TODO choose wisely
             }
         }
 
@@ -215,6 +242,9 @@ public class BookTraderImproved extends Agent {
                     //reply that we are able to start trading (the message is ignored by the environment)
                     ACLMessage reply = request.createReply();
                     reply.setPerformative(ACLMessage.INFORM);
+                    
+                    dateStarted = System.currentTimeMillis() / 1000;
+                    
                     return reply;
                 }
 
