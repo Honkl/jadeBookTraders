@@ -579,28 +579,17 @@ public class BookTraderImproved extends Agent {
                 offer.setMoney(sellPrice);
                 offers.add(offer);
 
-                /*
-                 // book-for-book, book+money offers
-                 ArrayList< Goal> unsatisfiedGoals = new ArrayList<>();
-                 unsatisfiedGoals.addAll(myGoal);
-                 for (Goal goal : myGoal) {
-                 for (BookInfo myBook : myBooks) {
-                 if (goal.getBook().getBookName().equals(myBook.getBookName())) {
-                 unsatisfiedGoals.remove(goal);
-                 }
-                 }
-                 }
+                // book-for-book, book+money offers
+                for (Goal g : getUnsatisfiedGoals(myGoal, myBooks)) {
+                    ArrayList<BookInfo> bis = new ArrayList<>();
+                    bis.add(g.getBook());
 
-                 for (Goal g : unsatisfiedGoals) {
-                 ArrayList<BookInfo> bis = new ArrayList<>();
-                 bis.add(g.getBook());
-
-                 Offer o = new Offer();
-                 o.setBooks(bis);
-                 double requiredMoney = (sellPrice - g.getValue()) < 0 ? 0 : sellPrice - g.getValue();
-                 o.setMoney(requiredMoney);
-                 offers.add(o);
-                 }*/
+                    Offer o = new Offer();
+                    o.setBooks(bis);
+                    double requiredMoney = Math.max(0, sellPrice - g.getValue());
+                    o.setMoney(requiredMoney);
+                    offers.add(o);
+                }
                 ChooseFrom cf = new ChooseFrom();
 
                 cf.setWillSell(sellBooks);
