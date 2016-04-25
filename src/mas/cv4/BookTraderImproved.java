@@ -141,7 +141,7 @@ public class BookTraderImproved extends Agent {
      * @return
      */
     private static double getBookValueSell(BookInfo book, List<Goal> myGoal, List<BookInfo> myBooks) {
-        double priceForBook = getValueDifferenceInTimeDecreasing(Constants.bookPrices.get(book.getBookName()), 1); // @TODO choose wisely
+        double priceForBook = getValueDifferenceInTimeDecreasing(Constants.bookPrices.get(book.getBookName()) + 5, 1); // @TODO choose wisely
 
         for (Goal goal : myGoal) {
             if (goal.getBook().getBookName().equals(book.getBookName())) {
